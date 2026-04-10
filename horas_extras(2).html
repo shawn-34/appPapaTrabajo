@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Control de Horas Extras</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:        #0e0e0e;
+      --surface:   #181818;
+      --card:      #1f1f1f;
+      --border:    #2e2e2e;
+      --accent:    #f5a623;
+      --accent2:   #e07b00;
+      --text:      #e8e0d4;
+      --muted:     #666;
+      --success:   #5ecb7e;
+      --danger:    #e05555;
+      --spent:     #8b7cf6;
+      --remaining: #3ab8e0;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 0;
+    }
+
+    .app { position: relative; z-index: 1; max-width: 980px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+    /* ── HEADER ── */
+    header {
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 1.2rem; margin-bottom: 2.5rem;
+    }
+    .header-top {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      flex-wrap: wrap; gap: 1rem; margin-bottom: 1.2rem;
+    }
+    .header-left h1 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      letter-spacing: 0.05em; color: var(--accent); line-height: 1;
+    }
+    .header-left p { color: var(--muted); font-size: 0.72rem; margin-top: 0.3rem; letter-spacing: 0.1em; text-transform: uppercase; }
+    .header-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-self: center; }
+
+    /* ── 4 TOTALS ── */
+    .totals-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px; background: var(--border); border: 1px solid var(--border);
+    }
+    .total-block { background: var(--card); padding: 0.9rem 1.1rem; }
+    .total-block .label { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.25rem; }
+    .total-block .value { font-size: 1.2rem; font-weight: 600; }
+    .total-block.extras    .value { color: var(--accent); }
+    .total-block.accrued   .value { color: var(--success); }
+    .total-block.spent     .value { color: var(--spent); }
+    .total-block.remaining .value { color: var(--remaining); }
+    .total-block.remaining { border-left: 3px solid var(--remaining); }
+    .total-block.remaining.overdrawn .value { color: var(--danger); }
+    .total-block.remaining.overdrawn { border-left-color: var(--danger); }
+
+    /* ── BUTTONS ── */
+    .btn {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 0.5rem 1rem; cursor: pointer; border: 1px solid;
+      transition: background 0.2s, color 0.2s; white-space: nowrap;
+      background: transparent;
+    }
+    .btn-spent     { border-color: var(--spent);  color: var(--spent); }
+    .btn-spent:hover   { background: var(--spent);  color: #fff; }
+    .btn-reset     { border-color: var(--danger); color: var(--danger); }
+    .btn-reset:hover   { background: var(--danger); color: #fff; }
+    .btn-primary   { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+    .btn-primary:hover { background: var(--accent2); border-color: var(--accent2); }
+    .btn-secondary { border-color: var(--border); color: var(--muted); }
+    .btn-secondary:hover { border-color: var(--text); color: var(--text); }
+    .btn-danger    { border-color: var(--danger); color: var(--danger); }
+    .btn-danger:hover  { background: var(--danger); color: #fff; }
+
+    /* ── YEAR BAR ── */
+    .year-bar { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }
+    .year-bar button {
+      background: none; border: 1px solid var(--border); color: var(--text);
+      font-family: 'IBM Plex Mono', monospace; font-size: 1rem;
+      width: 2rem; height: 2rem; cursor: pointer; transition: border-color 0.2s, color 0.2s;
+    }
+    .year-bar button:hover { border-color: var(--accent); color: var(--accent); }
+    .year-display { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; letter-spacing: 0.1em; }
+
+    /* ── MONTHS GRID ── */
+    .months-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1px; background: var(--border); border: 1px solid var(--border);
+    }
+    .month-card {
+      background: var(--card); padding: 1.2rem; cursor: pointer;
+      transition: background 0.15s; position: relative; overflow: hidden;
+    }
+    .month-card:hover { background: #262626; }
+    .month-card.has-data::after {
+      content: ''; position: absolute; top: 0; right: 0;
+      border-style: solid; border-width: 0 22px 22px 0;
+      border-color: transparent var(--accent) transparent transparent;
+    }
+    .month-card .month-name { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; letter-spacing: 0.05em; }
+    .month-card .month-hours { font-size: 0.72rem; color: var(--muted); margin-top: 0.4rem; }
+    .month-card .month-hours span { color: var(--accent); font-weight: 600; }
+
+    /* ── MODAL BACKDROP ── */
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78);
+      z-index: 100; align-items: flex-start; justify-content: center;
+      padding: 2rem 1rem; overflow-y: auto;
+    }
+    .modal-backdrop.open { display: flex; }
+    @keyframes slideIn { from { transform: translateY(-18px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* ── MONTH MODAL ── */
+    .modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-top: 3px solid var(--accent); width: 100%; max-width: 780px;
+      padding: 2rem; animation: slideIn 0.2s ease;
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.5rem;
+    }
+    .modal-header h2 { font-family: 'Bebas Neue', sans-serif; font-size: 2rem; letter-spacing: 0.05em; color: var(--accent); }
+    .modal-header .month-total { font-size: 0.75rem; color: var(--muted); }
+    .modal-header .month-total span { color: var(--success); font-weight: 600; }
+    .modal-close { background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; padding: 0.2rem 0.5rem; transition: color 0.2s; }
+    .modal-close:hover { color: var(--text); }
+
+    /* ── DAYS GRID ── */
+    .days-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--border); }
+    .day-header { background: var(--bg); text-align: center; padding: 0.4rem; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+    .day-cell {
+      background: var(--card); min-height: 64px; padding: 0.4rem; cursor: pointer;
+      transition: background 0.15s; position: relative;
+      display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .day-cell:hover { background: #262626; }
+    .day-cell.empty { background: var(--bg); cursor: default; }
+    .day-cell.today .day-num { color: var(--accent); }
+    .day-cell.today::before { content: ''; position: absolute; inset: 0; border: 1px solid var(--accent); pointer-events: none; opacity: 0.4; }
+    .day-cell.has-hours { background: #1c1c1c; }
+    .day-num { font-size: 0.7rem; color: var(--muted); font-weight: 600; }
+    .day-hours-badge { background: var(--accent); color: #000; font-size: 0.6rem; font-weight: 600; padding: 1px 4px; align-self: flex-end; }
+
+    /* ── SMALL MODALS ── */
+    .small-modal {
+      background: var(--surface); border: 1px solid var(--border);
+      width: 100%; max-width: 420px; padding: 1.8rem; animation: slideIn 0.2s ease;
+    }
+    .small-modal.accent-top { border-top: 3px solid var(--accent2); }
+    .small-modal.danger-top { border-top: 3px solid var(--danger); }
+    .small-modal h3 { font-family: 'Bebas Neue', sans-serif; font-size: 1.6rem; margin-bottom: 0.3rem; }
+    .small-modal h3.accent-color { color: var(--accent); }
+    .small-modal h3.danger-color  { color: var(--danger); }
+    .small-modal .sub { font-size: 0.68rem; color: var(--muted); margin-bottom: 1.5rem; letter-spacing: 0.08em; text-transform: uppercase; }
+
+    .input-row { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .input-row label { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+    .input-row input[type=number] {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      font-family: 'IBM Plex Mono', monospace; font-size: 1.2rem; font-weight: 600;
+      padding: 0.5rem 0.8rem; width: 110px; outline: none; transition: border-color 0.2s;
+    }
+    .input-row input[type=number]:focus { border-color: var(--accent); }
+
+    .info-box {
+      font-size: 0.72rem; color: var(--muted); margin-bottom: 1.2rem;
+      padding: 0.6rem; background: var(--card); border-left: 2px solid var(--success); line-height: 1.7;
+    }
+    .info-box span { font-weight: 600; color: var(--success); }
+    .modal-actions { display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 1.2rem; }
+
+    /* ── SPENT LOG MODAL ── */
+    .spent-modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-top: 3px solid var(--spent); width: 100%; max-width: 600px;
+      padding: 2rem; animation: slideIn 0.2s ease;
+    }
+    .spent-modal h2 { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; color: var(--spent); margin-bottom: 0.3rem; }
+    .spent-modal .sub { font-size: 0.68rem; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 1.2rem; }
+
+    /* summary strip */
+    .spent-summary {
+      display: flex; gap: 0; flex-wrap: wrap;
+      margin-bottom: 1.4rem;
+      border: 1px solid var(--border); background: var(--border);
+    }
+    .ss { background: var(--card); padding: 0.7rem 1rem; flex: 1; min-width: 120px; }
+    .ss .sl { font-size: 0.58rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+    .ss .sv { font-size: 1rem; font-weight: 600; margin-top: 0.15rem; }
+    .ss .sv.green  { color: var(--success); }
+    .ss .sv.purple { color: var(--spent); }
+    .ss .sv.blue   { color: var(--remaining); }
+    .ss .sv.red    { color: var(--danger); }
+
+    /* add row */
+    .add-spent-row {
+      display: flex; gap: 0.6rem; flex-wrap: wrap;
+      margin-bottom: 1.2rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--border);
+      align-items: center;
+    }
+    .add-spent-row input[type=number] {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      font-family: 'IBM Plex Mono', monospace; font-size: 1rem; font-weight: 600;
+      padding: 0.5rem 0.8rem; width: 100px; outline: none; transition: border-color 0.2s;
+    }
+    .add-spent-row input[type=text] {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem;
+      padding: 0.5rem 0.8rem; flex: 1; min-width: 140px; outline: none; transition: border-color 0.2s;
+    }
+    .add-spent-row input:focus { border-color: var(--spent); }
+    .add-spent-row label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+
+    /* log */
+    .log-list { max-height: 280px; overflow-y: auto; }
+    .log-empty { font-size: 0.78rem; color: var(--muted); text-align: center; padding: 1.5rem 0; }
+    .log-item {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.55rem 0; border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .log-item:last-child { border-bottom: none; }
+    .log-item .log-hours { font-size: 0.95rem; font-weight: 600; color: var(--spent); min-width: 60px; }
+    .log-item .log-rest  { font-size: 0.65rem; color: var(--muted); min-width: 70px; }
+    .log-item .log-date  { font-size: 0.65rem; color: var(--muted); min-width: 88px; }
+    .log-item .log-note  { font-size: 0.72rem; color: var(--text); flex: 1; opacity: 0.65; }
+    .log-item .log-del   { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; padding: 0.15rem 0.4rem; transition: color 0.2s; margin-left: auto; }
+    .log-item .log-del:hover { color: var(--danger); }
+
+    /* ── CONFIRM ── */
+    .confirm-modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-top: 3px solid var(--danger); width: 100%; max-width: 360px;
+      padding: 1.8rem; animation: slideIn 0.2s ease;
+    }
+    .confirm-modal h3 { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; color: var(--danger); margin-bottom: 0.7rem; }
+    .confirm-modal p  { font-size: 0.78rem; color: var(--muted); margin-bottom: 1.5rem; line-height: 1.6; }
+    .confirm-actions  { display: flex; gap: 0.8rem; }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); }
+
+    @media (max-width: 620px) {
+      .months-grid { grid-template-columns: repeat(2, 1fr); }
+      .totals-row  { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 380px) {
+      .totals-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="header-top">
+      <div class="header-left">
+        <h1>Horas Extras</h1>
+        <p>Registro de tiempo compensatorio</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-spent" id="btnOpenSpent">＋ Descanso gastado</button>
+        <button class="btn btn-reset"  id="btnReset">⊘ Resetear todo</button>
+      </div>
+    </div>
+
+    <div class="totals-row">
+      <div class="total-block extras">
+        <div class="label">Horas extras</div>
+        <div class="value" id="totalExtras">0 h</div>
+      </div>
+      <div class="total-block accrued">
+        <div class="label">Descanso acumulado</div>
+        <div class="value" id="totalAccrued">0 h 0 min</div>
+      </div>
+      <div class="total-block spent">
+        <div class="label">Descanso gastado</div>
+        <div class="value" id="totalSpent">0 h 0 min</div>
+      </div>
+      <div class="total-block remaining" id="blockRemaining">
+        <div class="label">Descanso restante</div>
+        <div class="value" id="totalRemaining">0 h 0 min</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="year-bar">
+    <button id="yearPrev">‹</button>
+    <div class="year-display" id="yearDisplay">2025</div>
+    <button id="yearNext">›</button>
+  </div>
+
+  <div class="months-grid" id="monthsGrid"></div>
+
+</div>
+
+<!-- MONTH MODAL -->
+<div class="modal-backdrop" id="monthModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h2 id="modalMonthTitle"></h2>
+        <div class="month-total">Extras: <span id="modalMonthExtras">0</span> h &nbsp;|&nbsp; Descanso: <span id="modalMonthRest">0 h 0 min</span></div>
+      </div>
+      <button class="modal-close" id="closeMonthModal">✕</button>
+    </div>
+    <div class="days-grid" id="daysGrid"></div>
+  </div>
+</div>
+
+<!-- DAY MODAL -->
+<div class="modal-backdrop" id="dayModal">
+  <div class="small-modal accent-top">
+    <h3 class="accent-color" id="dayModalTitle"></h3>
+    <div class="sub" id="dayModalSub"></div>
+    <div class="input-row">
+      <label>Horas extras:</label>
+      <input type="number" id="horasInput" min="0" max="24" step="0.5" value="0" />
+    </div>
+    <div class="info-box" id="restPreview">
+      Descanso generado: <span>0 h 0 min</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary"   id="btnSaveDay">Guardar</button>
+      <button class="btn btn-danger"    id="btnClearDay">Borrar día</button>
+      <button class="btn btn-secondary" id="btnCancelDay">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- SPENT LOG MODAL -->
+<div class="modal-backdrop" id="spentModal">
+  <div class="spent-modal">
+    <h2>Descanso Gastado</h2>
+    <div class="sub">Registra aquí las horas de descanso que ya has disfrutado</div>
+
+    <div class="spent-summary">
+      <div class="ss"><div class="sl">Acumulado</div><div class="sv green"  id="smAccrued">—</div></div>
+      <div class="ss"><div class="sl">Gastado</div>  <div class="sv purple" id="smSpent">—</div></div>
+      <div class="ss"><div class="sl">Restante</div> <div class="sv blue"   id="smRemaining">—</div></div>
+    </div>
+
+    <div class="add-spent-row">
+      <label>Horas:</label>
+      <input type="number" id="spentHoursInput" min="0.5" step="0.5" placeholder="ej: 4" />
+      <input type="text"   id="spentNoteInput"  maxlength="60" placeholder="Motivo / nota (opcional)" />
+      <button class="btn btn-spent" id="btnAddSpent">Añadir</button>
+    </div>
+
+    <div class="log-list" id="spentLog"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="closeSpentModal">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM MODAL -->
+<div class="modal-backdrop" id="confirmModal">
+  <div class="confirm-modal">
+    <h3>¿Resetear todo?</h3>
+    <p>Se eliminarán todas las horas extras <strong>y</strong> todos los registros de descanso gastado. Esta acción no se puede deshacer.</p>
+    <div class="confirm-actions">
+      <button class="btn btn-danger"    id="btnConfirmYes" style="font-weight:600">Sí, borrar todo</button>
+      <button class="btn btn-secondary" id="btnConfirmNo">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const STORAGE_KEY = 'horasExtras_v1';
+  const SPENT_KEY   = 'horasGastadas_v1';
+  const MONTHS      = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const DAYS_SHORT  = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const RATIO       = 1.5;
+
+  let data        = {};
+  let spentLog    = [];
+  let currentYear = new Date().getFullYear();
+  let selectedMonth = null;
+  let selectedDay   = null;
+
+  // ── STORAGE ──
+  function load() {
+    try { data     = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { data = {}; }
+    try { spentLog = JSON.parse(localStorage.getItem(SPENT_KEY))   || []; } catch { spentLog = []; }
+  }
+  function save()      { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+  function saveSpent() { localStorage.setItem(SPENT_KEY,   JSON.stringify(spentLog)); }
+
+  function dayKey(y, m, d) { return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+
+  // ── CALCS ──
+  function totalExtrasH()    { return Object.values(data).reduce((a,b)=>a+b, 0); }
+  function totalAccruedH()   { return totalExtrasH() * RATIO; }
+  function totalSpentH()     { return spentLog.reduce((a,b)=>a+b.hours, 0); }
+  function totalRemainingH() { return totalAccruedH() - totalSpentH(); }
+
+  function fmtH(h) {
+    const neg = h < 0;
+    const abs = Math.abs(h);
+    const hh  = Math.floor(abs);
+    const mm  = Math.round((abs - hh) * 60);
+    return (neg ? '−' : '') + `${hh} h ${mm} min`;
+  }
+
+  function extrasForMonth(y, m) {
+    const prefix = `${y}-${String(m+1).padStart(2,'0')}-`;
+    return Object.entries(data).reduce((s,[k,v]) => s + (k.startsWith(prefix) ? v : 0), 0);
+  }
+
+  // ── TOTALS ──
+  function updateTotals() {
+    const extras    = totalExtrasH();
+    const accrued   = totalAccruedH();
+    const spent     = totalSpentH();
+    const remaining = accrued - spent;
+
+    document.getElementById('totalExtras').textContent    = `${extras} h`;
+    document.getElementById('totalAccrued').textContent   = fmtH(accrued);
+    document.getElementById('totalSpent').textContent     = fmtH(spent);
+    document.getElementById('totalRemaining').textContent = fmtH(remaining);
+    document.getElementById('blockRemaining').classList.toggle('overdrawn', remaining < 0);
+  }
+
+  // ── MONTHS ──
+  function renderMonths() {
+    document.getElementById('yearDisplay').textContent = currentYear;
+    const grid = document.getElementById('monthsGrid');
+    grid.innerHTML = '';
+    MONTHS.forEach((name, i) => {
+      const ex   = extrasForMonth(currentYear, i);
+      const card = document.createElement('div');
+      card.className = 'month-card' + (ex > 0 ? ' has-data' : '');
+      card.innerHTML = `
+        <div class="month-name">${name}</div>
+        <div class="month-hours">${ex > 0
+          ? `<span>${ex} h</span> extras · ${fmtH(ex * RATIO)} desc.`
+          : 'Sin horas registradas'}</div>`;
+      card.addEventListener('click', () => openMonthModal(i));
+      grid.appendChild(card);
+    });
+    updateTotals();
+  }
+
+  // ── MONTH MODAL ──
+  function openMonthModal(mi) {
+    selectedMonth = mi;
+    document.getElementById('modalMonthTitle').textContent = `${MONTHS[mi]} ${currentYear}`;
+    renderDaysGrid(currentYear, mi);
+    updateMonthTotals();
+    document.getElementById('monthModal').classList.add('open');
+  }
+  function closeMonthModal() {
+    document.getElementById('monthModal').classList.remove('open');
+    selectedMonth = null;
+    renderMonths();
+  }
+  function updateMonthTotals() {
+    const ex = extrasForMonth(currentYear, selectedMonth);
+    document.getElementById('modalMonthExtras').textContent = ex;
+    document.getElementById('modalMonthRest').textContent   = fmtH(ex * RATIO);
+  }
+
+  // ── DAYS GRID ──
+  function renderDaysGrid(year, month) {
+    const grid = document.getElementById('daysGrid');
+    grid.innerHTML = '';
+    DAYS_SHORT.forEach(d => {
+      const h = document.createElement('div'); h.className = 'day-header'; h.textContent = d; grid.appendChild(h);
+    });
+    const today = new Date();
+    let offset = new Date(year, month, 1).getDay() - 1;
+    if (offset < 0) offset = 6;
+    for (let i = 0; i < offset; i++) {
+      const e = document.createElement('div'); e.className = 'day-cell empty'; grid.appendChild(e);
+    }
+    const days = new Date(year, month+1, 0).getDate();
+    for (let d = 1; d <= days; d++) {
+      const k     = dayKey(year, month, d);
+      const hours = data[k] || 0;
+      const isTod = today.getFullYear()===year && today.getMonth()===month && today.getDate()===d;
+      const cell  = document.createElement('div');
+      cell.className = 'day-cell' + (isTod?' today':'') + (hours>0?' has-hours':'');
+      cell.innerHTML  = `<span class="day-num">${d}</span>${hours>0?`<span class="day-hours-badge">+${hours}h</span>`:''}`;
+      cell.addEventListener('click', () => openDayModal(year, month, d));
+      grid.appendChild(cell);
+    }
+  }
+
+  // ── DAY MODAL ──
+  function openDayModal(year, month, day) {
+    selectedDay = { year, month, day };
+    const stored = data[dayKey(year, month, day)] || 0;
+    document.getElementById('dayModalTitle').textContent = `${day} de ${MONTHS[month]}`;
+    document.getElementById('dayModalSub').textContent   = `${year}`;
+    const inp = document.getElementById('horasInput');
+    inp.value = stored;
+    updateRestPreview(stored);
+    document.getElementById('dayModal').classList.add('open');
+    inp.focus();
+  }
+  function closeDayModal() {
+    document.getElementById('dayModal').classList.remove('open');
+    selectedDay = null;
+  }
+  function updateRestPreview(val) {
+    document.getElementById('restPreview').querySelector('span').textContent = fmtH((parseFloat(val)||0) * RATIO);
+  }
+
+  document.getElementById('horasInput').addEventListener('input', e => updateRestPreview(e.target.value));
+
+  document.getElementById('btnSaveDay').addEventListener('click', () => {
+    if (!selectedDay) return;
+    const val = parseFloat(document.getElementById('horasInput').value) || 0;
+    const k   = dayKey(selectedDay.year, selectedDay.month, selectedDay.day);
+    if (val === 0) delete data[k]; else data[k] = val;
+    save(); closeDayModal();
+    renderDaysGrid(currentYear, selectedMonth); updateMonthTotals(); updateTotals(); renderMonths();
+  });
+  document.getElementById('btnClearDay').addEventListener('click', () => {
+    if (!selectedDay) return;
+    delete data[dayKey(selectedDay.year, selectedDay.month, selectedDay.day)];
+    save(); closeDayModal();
+    renderDaysGrid(currentYear, selectedMonth); updateMonthTotals(); updateTotals(); renderMonths();
+  });
+  document.getElementById('btnCancelDay').addEventListener('click', closeDayModal);
+
+  // ── SPENT MODAL ──
+  function openSpentModal() {
+    refreshSpentModal();
+    document.getElementById('spentModal').classList.add('open');
+    document.getElementById('spentHoursInput').focus();
+  }
+  function closeSpentModal() {
+    document.getElementById('spentModal').classList.remove('open');
+  }
+  function refreshSpentModal() {
+    const accrued   = totalAccruedH();
+    const spent     = totalSpentH();
+    const remaining = accrued - spent;
+
+    document.getElementById('smAccrued').textContent   = fmtH(accrued);
+    document.getElementById('smSpent').textContent     = fmtH(spent);
+    const smRem = document.getElementById('smRemaining');
+    smRem.textContent = fmtH(remaining);
+    smRem.className   = 'sv ' + (remaining < 0 ? 'red' : 'blue');
+
+    const list = document.getElementById('spentLog');
+    if (spentLog.length === 0) {
+      list.innerHTML = '<div class="log-empty">Ningún descanso registrado aún.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    [...spentLog].reverse().forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'log-item';
+      row.innerHTML = `
+        <span class="log-hours">−${entry.hours}h</span>
+        <span class="log-rest">${fmtH(entry.hours)}</span>
+        <span class="log-date">${entry.date}</span>
+        <span class="log-note">${entry.note || '—'}</span>
+        <button class="log-del" title="Eliminar entrada" data-id="${entry.id}">✕</button>`;
+      list.appendChild(row);
+    });
+    list.querySelectorAll('.log-del').forEach(btn => {
+      btn.addEventListener('click', () => {
+        spentLog = spentLog.filter(e => e.id !== btn.dataset.id);
+        saveSpent(); refreshSpentModal(); updateTotals();
+      });
+    });
+  }
+
+  document.getElementById('btnAddSpent').addEventListener('click', () => {
+    const h    = parseFloat(document.getElementById('spentHoursInput').value);
+    const note = document.getElementById('spentNoteInput').value.trim();
+    if (!h || h <= 0) { document.getElementById('spentHoursInput').focus(); return; }
+    const now = new Date();
+    const dateStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
+    spentLog.push({ id: Date.now().toString(), hours: h, note, date: dateStr });
+    saveSpent();
+    document.getElementById('spentHoursInput').value = '';
+    document.getElementById('spentNoteInput').value  = '';
+    refreshSpentModal(); updateTotals();
+  });
+
+  document.getElementById('btnOpenSpent').addEventListener('click', openSpentModal);
+  document.getElementById('closeSpentModal').addEventListener('click', closeSpentModal);
+  document.getElementById('spentModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('spentModal')) closeSpentModal();
+  });
+
+  // ── CLOSE MODALS ──
+  document.getElementById('closeMonthModal').addEventListener('click', closeMonthModal);
+  document.getElementById('monthModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('monthModal')) closeMonthModal();
+  });
+  document.getElementById('dayModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('dayModal')) closeDayModal();
+  });
+
+  // ── YEAR ──
+  document.getElementById('yearPrev').addEventListener('click', () => { currentYear--; renderMonths(); });
+  document.getElementById('yearNext').addEventListener('click', () => { currentYear++; renderMonths(); });
+
+  // ── RESET ──
+  document.getElementById('btnReset').addEventListener('click', () => document.getElementById('confirmModal').classList.add('open'));
+  document.getElementById('btnConfirmNo').addEventListener('click', () => document.getElementById('confirmModal').classList.remove('open'));
+  document.getElementById('btnConfirmYes').addEventListener('click', () => {
+    data = {}; spentLog = [];
+    save(); saveSpent();
+    document.getElementById('confirmModal').classList.remove('open');
+    renderMonths();
+    if (selectedMonth !== null) { renderDaysGrid(currentYear, selectedMonth); updateMonthTotals(); }
+    if (document.getElementById('spentModal').classList.contains('open')) refreshSpentModal();
+  });
+
+  // ── KEYBOARD ──
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (document.getElementById('dayModal').classList.contains('open'))     { closeDayModal(); return; }
+      if (document.getElementById('spentModal').classList.contains('open'))   { closeSpentModal(); return; }
+      if (document.getElementById('confirmModal').classList.contains('open')) { document.getElementById('confirmModal').classList.remove('open'); return; }
+      if (document.getElementById('monthModal').classList.contains('open'))   { closeMonthModal(); return; }
+    }
+    if (e.key === 'Enter') {
+      if (document.getElementById('dayModal').classList.contains('open'))   { document.getElementById('btnSaveDay').click(); return; }
+      if (document.getElementById('spentModal').classList.contains('open')) { document.getElementById('btnAddSpent').click(); return; }
+    }
+  });
+
+  // ── INIT ──
+  load();
+  renderMonths();
+</script>
+</body>
+</html>
